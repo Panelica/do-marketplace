@@ -1,0 +1,5 @@
+# Packer build artifacts and plugin cache
+.packer.d/
+*.pkr.json
+packer_cache/
+manifest.json
