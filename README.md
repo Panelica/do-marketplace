@@ -145,4 +145,4 @@ for one domain. See https://panelica.com/pricing for details.
 - Issues with Panelica itself:
   https://forum.panelica.com
 - Direct vendor contact:
-  hello@panelica.com
+  info@panelica.com
