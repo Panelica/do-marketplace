@@ -9,7 +9,7 @@ Wants=panelica-mysql.service panelica-redis.service
 # (jwt_secret / encryption_key / MySQL / Redis password) so each starts
 # fresh once rotation completes. This unit must NOT restart these itself —
 # doing so deadlocks (see regenerate-secrets.sh).
-Before=panelica-backend.service panelica-external-api.service panelica-bandwidth.service panelica-bandwidth-limiter.service panelica-cron-scheduler.service panelica-ftp-quota.service
+Before=panelica-backend.service panelica-external-api.service panelica-bandwidth.service panelica-bandwidth-limiter.service panelica-cron-scheduler.service panelica-ftp-quota.service panelica-pgadmin4.service
 # Once the marker exists the rotation is done — systemd skips the unit
 # entirely on every subsequent boot (the script also re-checks the marker).
 ConditionPathExists=!/opt/panelica/var/.firstboot-completed

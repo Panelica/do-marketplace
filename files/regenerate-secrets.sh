@@ -131,6 +131,24 @@ fi
 # start fresh once this script exits. Restarting Redis above is safe — Redis
 # is upstream of this unit (After=panelica-redis), not downstream.
 
+# --- 3.5 pgAdmin4 admin password -------------------------------------------
+# The build deleted the baked pgadmin4.db (see scripts/03-firstboot-prep.sh),
+# so pgAdmin (re)creates its DB on its first start from PGADMIN_SETUP_PASSWORD,
+# which start_pgadmin.sh exports from this key. Rotating it here — before
+# panelica-pgadmin4 starts (Before= ordering) — gives every Droplet a unique
+# pgAdmin login instead of the default shipped in the image. Config-only, no
+# service touch: pgAdmin is ordered After this unit, and the DB is absent until
+# then, so the rotated password is the one baked into the new DB.
+# (If the baked DB had shipped, db_upgrade would keep the old admin user and
+# this rotation would never take effect — hence the build-time DB deletion.)
+NEW_PGADMIN=$(gen 24 24)
+if [ -n "$NEW_PGADMIN" ]; then
+    conf_set pgadmin admin_password "$NEW_PGADMIN"
+    echo "OK    pgadmin.admin_password rotated"
+else
+    echo "ERROR could not generate pgadmin password — left unchanged"
+fi
+
 # --- 4. cosmetic: stop sudo complaining about the per-instance hostname ----
 HN=$(hostname)
 if ! grep -qE "[[:space:]]${HN}([[:space:]]|\$)" /etc/hosts 2>/dev/null; then

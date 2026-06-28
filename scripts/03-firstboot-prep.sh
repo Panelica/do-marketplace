@@ -24,4 +24,16 @@ rm -f /opt/panelica/var/.firstboot-completed
 systemctl daemon-reload
 systemctl enable panelica-firstboot.service
 
+# Remove the build-time pgAdmin4 database so every Droplet recreates it on its
+# first pgAdmin start using the per-instance admin password that
+# regenerate-secrets.sh rotates into panelica.conf. If the baked DB shipped,
+# pgAdmin's db_upgrade would keep the existing admin@local.dev user and the
+# rotated password would never take effect — leaving the shared default in the
+# image. pgAdmin is stopped first in case the installer left it running (the
+# sqlite file would otherwise be held open / rewritten on shutdown).
+systemctl stop panelica-pgadmin4.service 2>/dev/null || true
+rm -f /opt/panelica/services/pgadmin4/data/pgadmin4.db
+rm -rf /opt/panelica/services/pgadmin4/sessions/* 2>/dev/null || true
+echo "[panelica-build] pgAdmin4 DB cleared — recreated per-Droplet on first start"
+
 echo "[panelica-build] first-boot unit installed and enabled"
