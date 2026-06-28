@@ -35,6 +35,25 @@ elif [ -n "$(command -v apt-get)" ]; then
     apt-get -y autoclean
 fi
 
+echo "[panelica-build] removing DigitalOcean monitoring agent (base-image)..."
+# The DigitalOcean ubuntu-24-04 base image ships the do-agent monitoring
+# package, which lives in /opt/digitalocean. img-check.sh treats the presence
+# of that directory as a CRITICAL FAIL (verified 2026-06-28 build: "[FAIL]
+# DigitalOcean directory detected") because each customer Droplet installs its
+# own agent when monitoring is enabled — it must not be baked into a snapshot.
+# Purge the package and remove the directory unconditionally so STATUS drops
+# from 2 (FAIL→abort) to at most 1 (WARN→pass).
+if [ -n "$(command -v apt-get)" ]; then
+    apt-get -y purge do-agent 2>/dev/null || true
+    apt-get -y autoremove 2>/dev/null || true
+fi
+rm -rf /opt/digitalocean
+
+echo "[panelica-build] clearing crash reports (reduces img-check WARN)..."
+# apport caught a transient fail2ban-server restart during install and wrote a
+# crash report; clear it so the validator's "un-cleared log" WARN list shrinks.
+rm -rf /var/crash/* 2>/dev/null || true
+
 echo "[panelica-build] clearing /tmp, bash history, /var/log..."
 rm -rf /tmp/* /var/tmp/*
 history -c
