@@ -3,3 +3,6 @@
 *.pkr.json
 packer_cache/
 manifest.json
+
+# Local listing preview mockup (not part of the build)
+preview/

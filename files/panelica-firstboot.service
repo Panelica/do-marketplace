@@ -1,0 +1,23 @@
+[Unit]
+Description=Panelica first-boot secret regeneration (marketplace snapshot)
+Documentation=https://panelica.com/docs
+# Rotate the build-time secrets after the datastores are up but before the
+# API starts, so panelica-backend reads the fresh secrets on its first start.
+After=panelica-mysql.service panelica-redis.service panelica-postgresql.service
+Wants=panelica-mysql.service panelica-redis.service
+# Ordered before every panelica daemon that consumes a rotated secret
+# (jwt_secret / encryption_key / MySQL / Redis password) so each starts
+# fresh once rotation completes. This unit must NOT restart these itself —
+# doing so deadlocks (see regenerate-secrets.sh).
+Before=panelica-backend.service panelica-external-api.service panelica-bandwidth.service panelica-bandwidth-limiter.service panelica-cron-scheduler.service panelica-ftp-quota.service
+# Once the marker exists the rotation is done — systemd skips the unit
+# entirely on every subsequent boot (the script also re-checks the marker).
+ConditionPathExists=!/opt/panelica/var/.firstboot-completed
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/panelica/scripts/firstboot/regenerate-secrets.sh
+
+[Install]
+WantedBy=multi-user.target

@@ -40,12 +40,43 @@ The build:
    the backend to settle.
 3. Runs `scripts/02-add-motd.sh` — replaces the default Ubuntu MOTD with
    a Panelica welcome that shows the panel URL and first-login steps.
-4. Runs `scripts/03-do-cleanup.sh` — performs the mandatory marketplace
+4. Runs `scripts/03-firstboot-prep.sh` — installs the first-boot secret
+   regeneration unit (`files/regenerate-secrets.sh` +
+   `files/panelica-firstboot.service`) and enables it. See **Per-Droplet
+   unique secrets** below.
+5. Runs `scripts/04-do-cleanup.sh` — performs the mandatory marketplace
    cleanup (apt upgrade, clear `/tmp` and `/var/log`, zero bash history,
    remove SSH keys and host keys, secure-erase free disk space).
-5. Snapshots the droplet across nine DigitalOcean regions.
+6. Runs `scripts/05-img-check.sh` — downloads and runs the official
+   `99-img-check.sh` validator from the partner repo against the cleaned
+   image. The build **aborts** if any critical test fails (exit 1);
+   non-critical warnings are allowed. The validator is removed afterwards
+   so nothing extra ships in the snapshot.
+7. Snapshots the droplet across nine DigitalOcean regions.
 
 Output: a snapshot named `panelica-YYYY-MM-DD-hhmm`.
+
+## Per-Droplet unique secrets (no shared secrets in the image)
+
+The Panelica installer generates a JWT secret, an encryption key, and the
+MySQL/Redis passwords at install time. Because this snapshot bakes a completed
+install, those secrets would otherwise be identical on every Droplet cloned
+from it. To prevent that, a systemd oneshot
+(`panelica-firstboot.service`) runs once on the **first boot** of every
+Droplet — after MySQL/Redis start and before the Panelica backend — and
+regenerates all four secrets so each customer's Droplet is cryptographically
+unique. The snapshot ships in Setup Wizard state (no domains/databases yet),
+so rotating the encryption key cannot orphan any data. A marker file
+(`/opt/panelica/var/.firstboot-completed`) makes it idempotent — it never runs
+twice.
+
+## Recommended Droplet size
+
+Panelica installs PostgreSQL, MySQL, Redis, Apache and Nginx side by side.
+For the listing we recommend a **minimum of 2 GB RAM / 2 vCPUs** (the same
+floor Plesk recommends on DigitalOcean); 1 GB is not enough for the parallel
+install and runtime. The snapshot itself is built on a 4 GB droplet but
+deploys to every Droplet plan.
 
 ## How this follows the DigitalOcean partner guidelines
 
