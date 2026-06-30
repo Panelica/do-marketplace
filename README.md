@@ -1,148 +1,67 @@
-# Panelica — DigitalOcean Marketplace 1-Click App
+# Panelica — DigitalOcean Marketplace 1-Click Droplet App
 
-Build configuration for the **Panelica Hosting Panel** listing on the
-DigitalOcean Marketplace.
+Packer build for the **Panelica Hosting Panel** 1-Click Droplet on Ubuntu 24.04.
+The layout follows DigitalOcean's official
+[`droplet-1-clicks`](https://github.com/digitalocean/droplet-1-clicks) scaffold so
+reviewers see the structure and validation flow they expect.
 
-## What this repository is
-
-This repo contains only the Packer configuration and three shell scripts
-that DigitalOcean uses to produce the Panelica 1-Click App snapshot.
-
-The Panelica panel itself lives elsewhere:
-
-- **Website**: https://panelica.com
-- **Live demo**: https://demo.panelica.com (role-based credentials on the page; resets every 6 h)
-- **Documentation**: https://panelica.com/docs
-- **Forum & support**: https://forum.panelica.com
-- **Public installer**: https://latest.panelica.com/install.sh
-
-## What this repository is NOT
-
-This repo does **not** contain the Panelica source code, panel binaries,
-licensing engine, or any runtime artifacts. The build pulls the latest
-public installer at build time, so the snapshot is always built from the
-same code path that every direct installation uses.
-
-## Build process (for DigitalOcean reviewers)
-
-```bash
-export DIGITALOCEAN_TOKEN=<your-token>
-packer init .
-packer build panelica.pkr.hcl
+```
+panelica-24-04/
+  template.json                                   Packer template (Ubuntu 24.04 base)
+  scripts/installer.sh                            installs Panelica + wires per-Droplet first-boot rotation
+  files/etc/update-motd.d/99-one-click            first-login banner (real IP resolved dynamically)
+  files/var/lib/cloud/scripts/per-instance/001_onboot   removes the build-time root SSH force-logout
+  files/var/lib/digitalocean/                     first-boot rotation assets staged for the installer
+common/scripts/                                   DigitalOcean common scripts (verbatim from droplet-1-clicks)
+  018-force-ssh-logout.sh  020-application-tag.sh  900-cleanup.sh  999-img-check.sh
 ```
 
-The build:
+## Build
 
-1. Spawns a fresh `ubuntu-24-04-x64` droplet on DigitalOcean (size
-   `s-2vcpu-4gb`, as recommended by your size-compatibility guidance).
-2. Runs `scripts/01-install-panelica.sh` — calls the official Panelica
-   installer at `https://latest.panelica.com/install.sh` and waits for
-   the backend to settle.
-3. Runs `scripts/02-add-motd.sh` — replaces the default Ubuntu MOTD with
-   a Panelica welcome that shows the panel URL and first-login steps.
-4. Runs `scripts/03-firstboot-prep.sh` — installs the first-boot secret
-   regeneration unit (`files/regenerate-secrets.sh` +
-   `files/panelica-firstboot.service`) and enables it. See **Per-Droplet
-   unique secrets** below.
-5. Runs `scripts/04-do-cleanup.sh` — performs the mandatory marketplace
-   cleanup (apt upgrade, clear `/tmp` and `/var/log`, zero bash history,
-   remove SSH keys and host keys, secure-erase free disk space).
-6. Runs `scripts/05-img-check.sh` — downloads and runs the official
-   `99-img-check.sh` validator from the partner repo against the cleaned
-   image. The build **aborts** if any critical test fails (exit 1);
-   non-critical warnings are allowed. The validator is removed afterwards
-   so nothing extra ships in the snapshot.
-7. Snapshots the droplet across nine DigitalOcean regions.
-
-Output: a snapshot named `panelica-YYYY-MM-DD-hhmm`.
-
-## Per-Droplet unique secrets (no shared secrets in the image)
-
-The Panelica installer generates a JWT secret, an encryption key, and the
-MySQL/Redis passwords at install time. Because this snapshot bakes a completed
-install, those secrets would otherwise be identical on every Droplet cloned
-from it. To prevent that, a systemd oneshot
-(`panelica-firstboot.service`) runs once on the **first boot** of every
-Droplet — after MySQL/Redis start and before the Panelica backend — and
-regenerates all four secrets so each customer's Droplet is cryptographically
-unique. The snapshot ships in Setup Wizard state (no domains/databases yet),
-so rotating the encryption key cannot orphan any data. A marker file
-(`/opt/panelica/var/.firstboot-completed`) makes it idempotent — it never runs
-twice.
-
-## Recommended Droplet size
-
-Panelica installs PostgreSQL, MySQL, Redis, Apache and Nginx side by side.
-For the listing we recommend a **minimum of 2 GB RAM / 2 vCPUs** (the same
-floor Plesk recommends on DigitalOcean); 1 GB is not enough for the parallel
-install and runtime. The snapshot itself is built on a 4 GB droplet but
-deploys to every Droplet plan.
-
-## How this follows the DigitalOcean partner guidelines
-
-We modelled the cleanup script on the official cleanup in the
-[`digitalocean/marketplace-partners`](https://github.com/digitalocean/marketplace-partners)
-repo (specifically `scripts/90-cleanup.sh`). Each step in our
-`03-do-cleanup.sh` exists so that
-[`scripts/99-img-check.sh`](https://github.com/digitalocean/marketplace-partners/blob/master/scripts/99-img-check.sh)
-passes against the resulting snapshot:
-
-| `img-check.sh` rule | How we satisfy it |
-|---|---|
-| `/opt/digitalocean` must not exist | Panelica never creates it. |
-| `root` password must be locked | Panelica installer leaves `root` password unset; the panel's Setup Wizard sets the *application* root password, not the Linux root password. DigitalOcean's cloud-init sets a random Linux root password on first boot. |
-| `/root/.bash_history` must be < 200 bytes | Cleared in `03-do-cleanup.sh`. |
-| `/root/.ssh/authorized_keys` must be < 50 bytes | Removed in `03-do-cleanup.sh`. |
-| `/etc/ssh/*key*` must not be present | Removed in `03-do-cleanup.sh`; cloud-init regenerates on first boot. |
-| `/var/log` should be clean | Truncated + archived logs deleted in `03-do-cleanup.sh`. |
-| `/var/lib/cloud/instances` should be empty | Cleared in `03-do-cleanup.sh`. |
-
-To validate locally before submission, you can run the partner repo's
-validator on the build droplet *before* snapshotting:
-
-```bash
-curl -sLO https://raw.githubusercontent.com/digitalocean/marketplace-partners/master/scripts/99-img-check.sh
-chmod +x 99-img-check.sh
-sudo ./99-img-check.sh
+```sh
+export DIGITALOCEAN_API_TOKEN=<your-DO-API-token>
+packer init .                       # installs the digitalocean builder plugin
+packer build panelica-24-04/template.json
 ```
 
-Status code 0 = ready for snapshot.
+This creates, configures, validates (`999-img-check.sh`), cleans
+(`900-cleanup.sh`), powers down and snapshots a build Droplet in one command,
+producing `panelica-24-04-snapshot-<timestamp>` in your DigitalOcean account.
+Submit that snapshot through the Marketplace Vendor Portal.
 
-## What the customer gets
+The build Droplet is `s-2vcpu-2gb` (2 GB RAM is enough for the Panelica install
+and keeps the snapshot's minimum disk small). Recommended customer Droplet:
+**2 GB / 2 vCPU minimum, 4 GB for production.**
 
-When a customer clicks "Deploy Panelica" in the DO Marketplace:
+## Notes for reviewers
 
-1. DigitalOcean spins up a droplet from this snapshot.
-2. cloud-init generates a fresh root password (shown in the DO console)
-   and regenerates SSH host keys.
-3. The MOTD points the customer at `https://<droplet-ip>:8443`.
-4. The customer opens the panel in their browser, accepts the
-   self-signed certificate, and completes the Setup Wizard.
+* **One OS per image.** This is the Ubuntu 24.04 build (`panelica-24-04`). Panelica
+  also supports Debian and AlmaLinux/Rocky via its standard installer, but each
+  1-Click image is a single OS per DigitalOcean's model.
+* **Per-Droplet uniqueness.** The build bakes secrets (jwt_secret, encryption_key,
+  MySQL/Redis/pgAdmin passwords) and the build Droplet's IP. A systemd one-shot
+  (`panelica-firstboot.service`, ordered *before* `panelica-backend`) runs once on
+  every Droplet's first boot to regenerate all secrets and reset the IP/hostname
+  from the DigitalOcean metadata service — so no two Droplets share secrets and
+  every Droplet uses its own IP. See
+  `panelica-24-04/files/var/lib/digitalocean/regenerate-secrets.sh`.
+* **Firewall.** Panelica manages its own firewall with **nftables + Fail2ban**
+  (configured by the installer) rather than `ufw`, which is why no `ufw` script is
+  used — adding `ufw` would conflict with Panelica's rules. `999-img-check.sh` only
+  detects `ufw`, so it emits a non-critical WARN here; the Droplet is firewalled.
+* **`img-check.sh` critical checks all pass:** `900-cleanup.sh` purges the
+  `droplet-agent` (so `/opt/digitalocean` is absent), clears root SSH keys / bash
+  history / logs, applies security updates, and zero-fills free space. Root has no
+  password, cloud-init is present, OS is supported.
+* **Setup Wizard.** The image ships with the panel in fresh "Setup Wizard" state —
+  the customer sets the admin password on first access at `https://<droplet-ip>:8443`.
+```
+```
 
-Total time from "Deploy" click to working panel: roughly six minutes
-on a 4 GB droplet.
+## Vendor links
 
-## Updating the listing
-
-When we ship a new Panelica release to `latest.panelica.com`, the
-DigitalOcean snapshot needs to be rebuilt. The process is:
-
-1. Re-run `packer build panelica.pkr.hcl` to produce a fresh snapshot.
-2. Submit the new snapshot ID via the Marketplace Vendor Portal (or
-   via the [PATCH `/api/v1/vendor-portal/apps/<app_id>` API call](https://github.com/digitalocean/marketplace-partners#updating-an-existing-1-click-app-via-api)
-   described in the partner repo's README).
-
-## License
-
-The build scripts in this repository are MIT licensed. The Panelica
-panel itself is commercial software; the Starter tier is free forever
-for one domain. See https://panelica.com/pricing for details.
-
-## Support
-
-- Issues with this repo or the 1-Click listing:
-  https://github.com/Panelica/do-marketplace/issues
-- Issues with Panelica itself:
-  https://forum.panelica.com
-- Direct vendor contact:
-  info@panelica.com
+* Live demo      https://demo.panelica.com (credentials shown on the page; resets every 6h)
+* Documentation  https://panelica.com/docs
+* Public installer https://latest.panelica.com/install.sh
+* Support / forum  https://forum.panelica.com
+* Vendor contact   info@panelica.com

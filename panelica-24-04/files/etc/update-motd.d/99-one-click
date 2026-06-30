@@ -1,0 +1,32 @@
+#!/bin/sh
+#
+# Configured as part of the DigitalOcean 1-Click Image build process.
+# The Droplet's real public IP is resolved dynamically at login time.
+
+myip=$(hostname -I | awk '{print $1}')
+export TERM=xterm-256color
+cat <<EOF
+********************************************************************************
+
+  Welcome to the Panelica Hosting Panel 1-Click Droplet.
+
+  Panel UI    https://${myip}:8443
+  Docs        https://panelica.com/docs
+  Support     https://forum.panelica.com
+
+  FIRST LOGIN
+    1. Open the Panel UI above in your browser.
+    2. Accept the self-signed certificate (a real Let's Encrypt certificate
+       is issued automatically when you add your first domain).
+    3. Complete the Setup Wizard to set your admin password and start your
+       free trial.
+
+  Panelica manages its own firewall (nftables + Fail2ban) and isolates every
+  customer with Cgroups v2, namespaces, chroot and per-user PHP-FPM.
+
+  For help and more information, visit
+  https://marketplace.digitalocean.com/apps/panelica
+
+********************************************************************************
+To delete this message of the day: rm -f $(readlink -f ${0})
+EOF

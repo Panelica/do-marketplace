@@ -149,6 +149,52 @@ else
     echo "ERROR could not generate pgadmin password — left unchanged"
 fi
 
+# --- 3.6 Per-Droplet IP reset ----------------------------------------------
+# The snapshot baked the BUILD Droplet's public IP into panelica.conf
+# (primary_ip / hostname / smtp_from / root_email / cors_allowed_origins) and
+# into the panel_settings table (primary_ip / server_hostname). Every Droplet
+# cloned from the snapshot gets a fresh IP, so those values are stale and break
+# email/DNS/SSL/hostname display until corrected. CORS self-heals at runtime
+# (the backend re-injects the live interface IP) but the persisted settings do
+# not. Fix them here, once, before the backend starts. Snapshot-scoped (the
+# one-shot marker guards re-runs) so a normal multi-IP install is never touched.
+OLD_IP=$(conf_get server primary_ip)
+# DigitalOcean metadata service — the authoritative public IPv4 of this Droplet.
+NEW_IP=$(curl -s --max-time 10 http://169.254.169.254/metadata/v1/interfaces/public/0/ipv4/address 2>/dev/null)
+if echo "$NEW_IP" | grep -qE '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' \
+   && echo "$OLD_IP" | grep -qE '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' \
+   && [ "$OLD_IP" != "$NEW_IP" ]; then
+    # Replace every occurrence of the baked IP in panelica.conf.
+    OLD_ESC=$(echo "$OLD_IP" | sed 's/\./\\./g')
+    sed -i "s/${OLD_ESC}/${NEW_IP}/g" "$CONF"
+    echo "OK    panelica.conf IP ${OLD_IP} -> ${NEW_IP}"
+
+    # Correct the persisted panel_settings rows. Guarded by the old value so a
+    # hostname the user already customised is never overwritten. PostgreSQL uses
+    # socket trust auth, so root connects as 'postgres' with no password.
+    PSQL="${INSTALL_DIR}/services/postgresql/bin/psql"
+    PG_SOCK="${INSTALL_DIR}/var/run/postgresql"
+    DBNAME=$(conf_get database.postgresql database)
+    [ -z "$DBNAME" ] && DBNAME="panelica_dev"
+    if [ -x "$PSQL" ]; then
+        for i in $(seq 1 30); do
+            [ -S "${PG_SOCK}/.s.PGSQL.5433" ] && break
+            echo "waiting for PostgreSQL socket ($i/30)..."
+            sleep 2
+        done
+        if "$PSQL" -h "$PG_SOCK" -p 5433 -U postgres -d "$DBNAME" \
+             -c "UPDATE panel_settings SET setting_value='${NEW_IP}' WHERE setting_key IN ('primary_ip','server_hostname') AND setting_value='${OLD_IP}';"; then
+            echo "OK    panel_settings primary_ip/server_hostname -> ${NEW_IP}"
+        else
+            echo "WARN  panel_settings IP update failed (CORS auto-inject still keeps the panel reachable)"
+        fi
+    else
+        echo "WARN  psql not found at $PSQL — panel_settings IP left unchanged"
+    fi
+else
+    echo "INFO  IP reset skipped (old=${OLD_IP} new=${NEW_IP} — no DO metadata IP or already current)"
+fi
+
 # --- 4. cosmetic: stop sudo complaining about the per-instance hostname ----
 HN=$(hostname)
 if ! grep -qE "[[:space:]]${HN}([[:space:]]|\$)" /etc/hosts 2>/dev/null; then

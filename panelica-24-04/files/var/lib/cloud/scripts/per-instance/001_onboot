@@ -1,0 +1,13 @@
+#!/bin/sh
+#
+# Runs once on the FIRST boot of every Droplet launched from the snapshot
+# (cloud-init per-instance). Undoes the build-time root SSH force-logout that
+# 018-force-ssh-logout.sh installed, so the operator can log in normally after
+# the Droplet has finished provisioning.
+
+# Remove the ssh force logout command.
+sed -e '/Match User root/d' \
+    -e '/.*ForceCommand.*droplet.*/d' \
+    -i /etc/ssh/sshd_config
+
+systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || true
